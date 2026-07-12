@@ -53,7 +53,11 @@ python "<스킬>/scripts/deskg.py" folders            # folderId ↔ 폴더 경�
 python "<스킬>/scripts/deskg.py" new --title "..." --html-file plan.html --folder 4
 python "<스킬>/scripts/deskg.py" progress 72 --html-file prog.html   # 진행 추가(새 버전)
 python "<스킬>/scripts/deskg.py" comment 72 --body-file note.txt     # 코멘트/메모
+python "<스킬>/scripts/deskg.py" patch 72 --status 완료 --done true  # 상태/완료/본문 수정
+python "<스킬>/scripts/deskg.py" notifications                       # 내 알림(코멘트/멘션)
 ```
+> `patch`·`notifications`·`progress` 는 **최신 배포 서버**에서만 동작한다(구버전이면 404 →
+> 헬퍼가 안내). 조회(me/tasks/task/comments/folders)와 new/comment 는 어디서나 동작.
 
 - **본문은 항상 파일로 넘긴다**(`--html-file` / `--body-file`). 한글·HTML을 CLI 인자로
   직접 넘기면 Windows PowerShell에서 따옴표/인코딩이 깨진다. 임시 파일은 스크래치
@@ -112,10 +116,13 @@ python "<스킬>/scripts/deskg.py" tasks --q "핵심키워드"
 코멘트 한 줄로 충분하다(남발 금지). 코멘트는 **평문**이다(HTML escape, 줄바꿈 유지, `@이름` 멘션 강조) —
 읽기 좋게 불릿(`•`)·상태 이모지(▶ ✅ 📌)를 쓴다.
 
-### 3. 완료 — 마무리 코멘트
+### 3. 완료 — 마무리 코멘트 + 상태
 작업이 끝나면 완료 코멘트를 올린다: **한 일 / 결과·검증 / 커밋(있으면)**.
-- API로는 상태(시작전/진행 중/완료)나 완료 체크를 바꿀 수 없다 → 완료를 **본문에 명확히** 쓰고,
-  최종 상태 전환은 사람이 UI에서 한다. (원하면 사용자에게 "완료 처리해 두겠냐"고 물어볼 수 있음)
+- 배포된 서버면 `patch` 로 **상태·완료도 바꿀 수 있다**(쓰기 전 확인 규칙 적용):
+  ```bash
+  python "<스킬>/scripts/deskg.py" patch 72 --status 완료 --done true
+  ```
+- 구버전 서버(`patch` 404)면 완료를 **코멘트 본문에 명확히** 쓰고, 상태 전환은 사람이 UI에서 한다.
 
 ## 커밋 메시지 규칙
 

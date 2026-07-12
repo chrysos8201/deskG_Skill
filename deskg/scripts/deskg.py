@@ -265,8 +265,58 @@ def cmd_progress(args, base, key, folder):
     print(f"url: {base}/{args.id}")
 
 
+def cmd_notifications(args, base, key, folder):
+    _, rows = request("GET", "/api/v1/notifications", base, key, soft=True)
+    if rows is None:
+        die("알림 조회 실패. 서버에 GET /notifications 가 배포됐는지 확인하세요 (구버전 404).")
+    if args.json:
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        return
+    if not rows:
+        print("(no notifications)")
+        return
+    for n in rows:
+        print(f"— [{n['kind']}] {n['actorName']}  ·  {n['taskTitle']} (#{n['taskId']})  ·  {n['createdAt']}")
+        print(f"  {n['preview']}")
+
+
+def cmd_patch(args, base, key, folder):
+    payload = {}
+    if args.title is not None:
+        payload["title"] = args.title
+    html = read_text_arg(None, args.html_file, "html")
+    if html is not None:
+        payload["html"] = html
+    if args.status is not None:
+        payload["status"] = args.status
+    if args.priority is not None:
+        payload["priority"] = args.priority
+    if args.milestone is not None:
+        payload["milestone"] = args.milestone
+    if args.done is not None:
+        payload["done"] = args.done == "true"
+    if args.folder is not None:
+        payload["folderId"] = args.folder
+    if args.clear_folder:
+        payload["clearFolder"] = True
+    if args.assignee is not None:
+        payload["assigneeId"] = args.assignee
+    if not payload:
+        die("변경할 필드를 하나 이상 지정하세요 (--status/--done/--title/--html-file/--folder/…)")
+
+    if args.dry_run:
+        print(f"[dry-run] PATCH /api/v1/tasks/{args.id}")
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+    _, res = request("PATCH", f"/api/v1/tasks/{args.id}", base, key, payload, soft=True)
+    if res is None:
+        die("태스크 수정 실패. 서버에 PATCH /tasks/{id} 가 배포됐는지 확인하세요 (구버전 404).")
+    print(f"태스크 #{args.id} 수정됨 — status={res.get('status')} priority={res.get('priority')} done={res.get('done')}")
+    print(f"url: {base}/{args.id}")
+
+
 def cmd_folders(args, base, key, folder):
-    """No folder-list endpoint exists — derive crumb<->folderId from tasks."""
+    """Derive crumb<->folderId from tasks (works even on servers without GET /folders)."""
     _, tasks = request("GET", "/api/v1/tasks", base, key)
     by_crumb = {}
     for t in tasks or []:
@@ -362,6 +412,22 @@ def build_parser():
                     help="do not bump the task to the top of the feed")
     sp.add_argument("--dry-run", action="store_true")
 
+    sp = sub.add_parser("patch", help="update a task (status/done/title/html/folder/priority/…)")
+    sp.add_argument("id", type=int)
+    sp.add_argument("--title")
+    sp.add_argument("--html-file", dest="html_file", help="file with new HTML body")
+    sp.add_argument("--status", help="시작전 / 진행 중 / 검수중 / 완료 (또는 '' 로 해제)")
+    sp.add_argument("--priority", help="S / A / B / C (또는 '' 로 해제)")
+    sp.add_argument("--milestone")
+    sp.add_argument("--done", choices=["true", "false"], help="완료 여부")
+    sp.add_argument("--folder", type=int, help="folderId 로 이동")
+    sp.add_argument("--clear-folder", dest="clear_folder", action="store_true", help="미분류로 이동")
+    sp.add_argument("--assignee", help="담당자 userId ('' 로 해제)")
+    sp.add_argument("--dry-run", action="store_true")
+
+    sp = sub.add_parser("notifications", help="list my notifications (comments/@mentions)")
+    sp.add_argument("--json", action="store_true")
+
     sub.add_parser("folders", help="derive folderId<->folder map from tasks")
 
     sp = sub.add_parser("new", help="create a task (the plan)")
@@ -391,6 +457,8 @@ def main():
         "comments": cmd_comments,
         "progresses": cmd_progresses,
         "progress": cmd_progress,
+        "patch": cmd_patch,
+        "notifications": cmd_notifications,
         "folders": cmd_folders,
         "new": cmd_new,
         "comment": cmd_comment,
