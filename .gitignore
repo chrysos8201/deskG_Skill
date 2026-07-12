@@ -1,0 +1,14 @@
+# 절대 커밋 금지 — 실제 API 키가 들어가는 로컬 설정
+config.local.json
+**/config.local.json
+config.json
+.deskg/
+*.key
+
+# 임시/에디터/OS
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
