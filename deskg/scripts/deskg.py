@@ -208,6 +208,20 @@ def cmd_task(args, base, key, folder):
     print(t.get("content") or "(empty)")
 
 
+def cmd_comments(args, base, key, folder):
+    _, rows = request("GET", f"/api/v1/tasks/{args.id}/comments", base, key)
+    if args.json:
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        return
+    if not rows:
+        print("(no comments)")
+        return
+    for c in rows:
+        print(f"— {c['author']}  ·  {c['createdAt']}  (#{c['id']})")
+        print(c["body"])
+        print()
+
+
 def cmd_folders(args, base, key, folder):
     """No folder-list endpoint exists — derive crumb<->folderId from tasks."""
     _, tasks = request("GET", "/api/v1/tasks", base, key)
@@ -285,6 +299,10 @@ def build_parser():
     sp.add_argument("id", type=int)
     sp.add_argument("--json", action="store_true")
 
+    sp = sub.add_parser("comments", help="list a task's comments (progress thread)")
+    sp.add_argument("id", type=int)
+    sp.add_argument("--json", action="store_true")
+
     sub.add_parser("folders", help="derive folderId<->folder map from tasks")
 
     sp = sub.add_parser("new", help="create a task (the plan)")
@@ -311,6 +329,7 @@ def main():
         "me": cmd_me,
         "tasks": cmd_tasks,
         "task": cmd_task,
+        "comments": cmd_comments,
         "folders": cmd_folders,
         "new": cmd_new,
         "comment": cmd_comment,

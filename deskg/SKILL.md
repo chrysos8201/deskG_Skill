@@ -47,6 +47,7 @@ python "<스킬>/scripts/deskg.py" me                 # 키 확인 → 소유 �
 python "<스킬>/scripts/deskg.py" tasks --q "검색어"  # 태스크 검색(제목+본문 프리뷰)
 python "<스킬>/scripts/deskg.py" tasks --folder 4   # 폴더로 필터
 python "<스킬>/scripts/deskg.py" task 72            # 태스크 상세(본문 포함)
+python "<스킬>/scripts/deskg.py" comments 72        # 그 태스크의 코멘트(진행 스레드) 읽기
 python "<스킬>/scripts/deskg.py" folders            # folderId ↔ 폴더 경로 표
 python "<스킬>/scripts/deskg.py" new --title "..." --html-file plan.html --folder 4
 python "<스킬>/scripts/deskg.py" comment 72 --body-file note.txt
