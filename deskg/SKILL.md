@@ -47,10 +47,12 @@ python "<스킬>/scripts/deskg.py" me                 # 키 확인 → 소유 �
 python "<스킬>/scripts/deskg.py" tasks --q "검색어"  # 태스크 검색(제목+본문 프리뷰)
 python "<스킬>/scripts/deskg.py" tasks --folder 4   # 폴더로 필터
 python "<스킬>/scripts/deskg.py" task 72            # 태스크 상세(본문 포함)
-python "<스킬>/scripts/deskg.py" comments 72        # 그 태스크의 코멘트(진행 스레드) 읽기
+python "<스킬>/scripts/deskg.py" comments 72        # 코멘트(스레드) 읽기
+python "<스킬>/scripts/deskg.py" progresses 72      # 진행(버전) 목록 읽기
 python "<스킬>/scripts/deskg.py" folders            # folderId ↔ 폴더 경로 표
 python "<스킬>/scripts/deskg.py" new --title "..." --html-file plan.html --folder 4
-python "<스킬>/scripts/deskg.py" comment 72 --body-file note.txt
+python "<스킬>/scripts/deskg.py" progress 72 --html-file prog.html   # 진행 추가(새 버전)
+python "<스킬>/scripts/deskg.py" comment 72 --body-file note.txt     # 코멘트/메모
 ```
 
 - **본문은 항상 파일로 넘긴다**(`--html-file` / `--body-file`). 한글·HTML을 CLI 인자로
@@ -88,19 +90,27 @@ python "<스킬>/scripts/deskg.py" tasks --q "핵심키워드"
 - 폴더: 개발 작업은 보통 `defaultFolderId`(설정값). 없으면 `folders`로 leaf 폴더 선택.
 - 출력된 태스크 URL을 기억해 둔다(이후 진행/완료 보고와 커밋에 쓴다).
 
-### 2. 진행 — "진행 추가" vs "코멘트만" 판단
-작업 중 보고는 **모두 그 태스크의 코멘트 스레드**로 올라간다 — deskG UI의 별도 '진행' 탭이
-아니라 코멘트로 쌓인다(현재 API엔 진행 버전 쓰기가 없음). 무게에 따라 둘 중 하나로:
+### 2. 진행 보고 — "진행 추가(버전)" vs "코멘트"
+진전이 생기면 두 갈래로 판단한다:
 
-- **진행 추가 (구조화된 진행 보고)** — 다음이면 이걸로:
-  단계/마일스톤 완료, 결정, 산출물, 방향 전환, 블로커 해결 등 **의미 있는 진전**.
-  형식: 헤더 + 한 일 + 현재 상태 + 다음. (플레이북 템플릿)
-- **코멘트만 (가벼운 메모)** — 다음이면 코멘트만:
-  짧은 질문·확인, 사소한 관찰, "따로 처리하겠다" 정도의 메모, 피드백 확인.
-  **진행 보고로 올릴 만큼이 아니면 코멘트 한 줄로 충분하다.** 남발하지 말 것.
+- **진행 추가 (`progress`) — 새 버전 스냅샷**: 태스크 **본문이 새 상태로 갱신**될 만한 의미 있는
+  진전일 때(계획·문서·산출물이 실제로 진척돼 그 시점을 버전으로 남기고 싶을 때). 갱신된 **본문
+  전체**를 넘기면 기존 본문이 이전 버전으로 스냅샷된다. deskG UI '진행' 탭에 번호로 쌓이고 ◁▷로 비교된다.
+  ```bash
+  python "<스킬>/scripts/deskg.py" progress 72 --html-file prog.html   # --title, --copy-comments 옵션
+  ```
+  본문은 리치 HTML(`--html-file`) 또는 평문(`--body-file`). 첫 추가면 기존 본문이 진행 1, 새 내용이 진행 2가 된다.
+  ⚠️ 진행 추가 API(`POST /tasks/{id}/progress`)가 **배포된 서버**에서만 동작한다. 구버전이면 404 →
+  헬퍼가 안내하며, 그 경우 아래 코멘트로 진행 보고한다.
+- **코멘트 (`comment`) — 스레드에 보고/논의**: "한 일 / 다음" 같은 **진행 보고**나 질문·메모.
+  본문은 그대로 두고 append한다. 의미 있는 진행 보고는 구조화(헤더+한 일+다음)해서, 사소한 메모·질문은 한 줄로.
+  ```bash
+  python "<스킬>/scripts/deskg.py" comment 72 --body-file note.txt
+  ```
 
-코멘트는 **평문**이다(HTML은 그대로 escape됨, 줄바꿈은 유지, `@이름` 멘션은 강조).
-읽기 좋게 줄바꿈·불릿(`•`)·상태 이모지(▶ ✅ 📌)를 쓴다.
+판단 기준: **본문 자체가 새 상태로 넘어가면 `progress`**, 그냥 보고·질문·메모면 **`comment`**. 사소한 건
+코멘트 한 줄로 충분하다(남발 금지). 코멘트는 **평문**이다(HTML escape, 줄바꿈 유지, `@이름` 멘션 강조) —
+읽기 좋게 불릿(`•`)·상태 이모지(▶ ✅ 📌)를 쓴다.
 
 ### 3. 완료 — 마무리 코멘트
 작업이 끝나면 완료 코멘트를 올린다: **한 일 / 결과·검증 / 커밋(있으면)**.

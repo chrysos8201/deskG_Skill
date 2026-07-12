@@ -23,6 +23,8 @@ Authorization: Bearer dgk_xxxxxxxx...
 | POST | `/api/v1/tasks` | 생성 `{title*, body?, html?, folderId?, parentId?}` |
 | GET  | `/api/v1/tasks/{id}/comments` | 코멘트 목록(기본 스레드) |
 | POST | `/api/v1/tasks/{id}/comments` | 코멘트 작성 `{body*}` |
+| GET  | `/api/v1/tasks/{id}/progresses` | 진행(버전) 목록 `{id, number, content, author, createdAt}` |
+| POST | `/api/v1/tasks/{id}/progress` | 진행 추가 `{html?\|body?, title?, copyComments?, bump?}` — 배포된 서버에서만(구버전 404) |
 
 ### 응답 필드
 - 요약: `id, title, author, crumb, status, priority, done, commentCount, createdAt`
@@ -34,8 +36,10 @@ Authorization: Bearer dgk_xxxxxxxx...
 
 - **생성 시 설정 가능한 것은 `title/body/html/folderId/parentId`뿐.**
   상태(status)·우선순위·담당자·완료(done)·마일스톤은 **API로 설정/변경 불가**.
-- **수정(PATCH) 없음, 삭제 없음, 진행 버전 쓰기 없음.** 태스크는 만들면 끝, 이후
-  보고는 **코멘트**로만 쌓인다. (그래서 "진행 추가"도 구조화된 코멘트로 표현한다.)
+- **본문 수정(PATCH) 없음, 삭제 없음.** 태스크 본문을 직접 고치는 PATCH는 없다. 진전은
+  **진행 추가(`POST …/progress`, 새 버전 스냅샷)** 또는 **코멘트**로 남긴다.
+  진행 추가는 최신 배포 서버에서만 동작(구버전이면 404 → 코멘트로 대체). 상태/완료(status/done)
+  변경도 아직 없어 완료 전환은 UI에서 한다.
 - **폴더 배치 규칙**(UI와 동일): 태스크는 **leaf 폴더**에만. 최상위 금지, 하위폴더를
   가진 폴더 금지. 위반 시 `400`과 사유 문구.
 - **폴더 목록 엔드포인트가 없다.** folderId를 알아내려면 `folders` 헬퍼를 쓴다

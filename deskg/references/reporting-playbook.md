@@ -49,9 +49,13 @@ python "<스킬>/scripts/deskg.py" new --title "작업 요약 (2026-07-12)" --ht
 
 ---
 
-## 2) 진행 추가 — 구조화된 진행 코멘트 (평문)
+## 2) 진행 보고 코멘트 (평문)
 
-의미 있는 진전(단계 완료·결정·산출물·방향 전환·블로커 해결)일 때. `progress.txt`로 저장 후:
+> 태스크 **본문 자체가 새 상태로 갱신**될 진전이면 코멘트 대신 **진행 추가(새 버전)** 를 쓴다:
+> `python "<스킬>/scripts/deskg.py" progress {id} --html-file prog.html` (SKILL §2). 아래는 본문은 두고
+> 스레드에 **진행을 보고**하는 코멘트 템플릿이다.
+
+의미 있는 진전(단계 완료·결정·산출물·방향 전환·블로커 해결)을 보고할 때. `progress.txt`로 저장 후:
 ```bash
 python "<스킬>/scripts/deskg.py" comment 72 --body-file progress.txt
 ```

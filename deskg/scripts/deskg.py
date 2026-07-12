@@ -222,6 +222,49 @@ def cmd_comments(args, base, key, folder):
         print()
 
 
+def cmd_progresses(args, base, key, folder):
+    _, rows = request("GET", f"/api/v1/tasks/{args.id}/progresses", base, key)
+    if args.json:
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        return
+    if not rows:
+        print("(no progresses — 아직 진행 버전이 없는 태스크. 코멘트만 있을 수 있음)")
+        return
+    for p in rows:
+        print(f"— 진행 {p['number']}  ·  {p['author']}  ·  {p['createdAt']}  (#{p['id']})")
+        print(p["content"])
+        print()
+
+
+def cmd_progress(args, base, key, folder):
+    html = read_text_arg(None, args.html_file, "html")
+    body = read_text_arg(args.body, args.body_file, "body")
+    if (not html or not html.strip()) and (not body or not body.strip()):
+        die("진행 내용을 --html-file / --body-file / --body 중 하나로 제공하세요")
+    payload = {}
+    if html is not None:
+        payload["html"] = html
+    if body is not None:
+        payload["body"] = body
+    if args.title:
+        payload["title"] = args.title
+    if args.copy_comments:
+        payload["copyComments"] = True
+    if args.no_bump:
+        payload["bump"] = False
+
+    if args.dry_run:
+        print(f"[dry-run] POST /api/v1/tasks/{args.id}/progress")
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+    status, res = request("POST", f"/api/v1/tasks/{args.id}/progress", base, key, payload, soft=True)
+    if res is None:
+        die("진행 추가 실패. 서버에 진행 추가 API(POST /tasks/{id}/progress)가 배포됐는지 확인하세요"
+            " (구버전 서버면 404 — 그럴 땐 comment 로 진행 보고).")
+    print(f"진행 {res['number']} 추가됨 (#{res['id']})")
+    print(f"url: {base}/{args.id}")
+
+
 def cmd_folders(args, base, key, folder):
     """No folder-list endpoint exists — derive crumb<->folderId from tasks."""
     _, tasks = request("GET", "/api/v1/tasks", base, key)
@@ -303,6 +346,22 @@ def build_parser():
     sp.add_argument("id", type=int)
     sp.add_argument("--json", action="store_true")
 
+    sp = sub.add_parser("progresses", help="list a task's progress versions")
+    sp.add_argument("id", type=int)
+    sp.add_argument("--json", action="store_true")
+
+    sp = sub.add_parser("progress", help="add a progress version (진행 추가)")
+    sp.add_argument("id", type=int)
+    sp.add_argument("--html-file", dest="html_file", help="file with HTML progress content")
+    sp.add_argument("--body-file", dest="body_file", help="file with plain progress content")
+    sp.add_argument("--body", help="inline plain content (prefer files)")
+    sp.add_argument("--title", help="also update the task title")
+    sp.add_argument("--copy-comments", dest="copy_comments", action="store_true",
+                    help="copy the previous version's comments into this one")
+    sp.add_argument("--no-bump", dest="no_bump", action="store_true",
+                    help="do not bump the task to the top of the feed")
+    sp.add_argument("--dry-run", action="store_true")
+
     sub.add_parser("folders", help="derive folderId<->folder map from tasks")
 
     sp = sub.add_parser("new", help="create a task (the plan)")
@@ -330,6 +389,8 @@ def main():
         "tasks": cmd_tasks,
         "task": cmd_task,
         "comments": cmd_comments,
+        "progresses": cmd_progresses,
+        "progress": cmd_progress,
         "folders": cmd_folders,
         "new": cmd_new,
         "comment": cmd_comment,
