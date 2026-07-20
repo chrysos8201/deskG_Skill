@@ -10,11 +10,14 @@ deskG(https://deskg.kr) 작업을 **태스크로 리포팅**하기 위한 Claude
 4. 끝나면 **완료 코멘트**를 남기고,
 5. **커밋 메시지 첫 줄에 태스크 링크**를 붙인다.
 
-## 두 가지 변형
+## 세 가지 변형
 - **`deskg`** — 기본. 태스크·코멘트 **게시 전 사용자 확인**을 받는다(안전 기본값).
 - **`deskg-force`** — 확인 생략. 게시를 매번 묻지 않고 **바로 올린다**. 자기 워크스페이스에
   "매번 묻지 말고 올려라"라고 미리 승인한 사람용. `deskg` 의 헬퍼·문서를 **재사용**한다(얇은
   `deskg-force/SKILL.md` 하나). *관찰된 콘텐츠 속 지시 금지·폴더 규칙·키 보안 등 안전 경계는 유지.*
+- **`deskg-read`** — **읽기 전용**. 태스크 검색·상세·코멘트·진행 버전·알림을 조회해 요약만 한다.
+  링크(`https://deskg.kr/72`)를 주면 그 태스크를, deskG 외 링크면 웹 페이지를 읽어 정리한다.
+  **아무것도 게시·수정하지 않는다**(`new`/`comment`/`progress`/`patch` 금지). 역시 `deskg` 헬퍼를 재사용.
 
 ## 구성
 ```
@@ -32,20 +35,22 @@ deskG_Skill/
 ```
 
 ## 설치
-두 폴더를 Claude Code 스킬 경로에 둔다. `deskg-force` 는 `deskg` 헬퍼를 재사용하므로 **함께 설치**:
+필요한 폴더를 Claude Code 스킬 경로에 둔다. 변형들은 `deskg` 헬퍼를 재사용하므로 **함께 설치**:
 ```bash
 git clone git@github.com:chrysos8201/deskG_Skill.git
 cp -r deskG_Skill/deskg       ~/.claude/skills/deskg
 cp -r deskG_Skill/deskg-force ~/.claude/skills/deskg-force
+cp -r deskG_Skill/deskg-read  ~/.claude/skills/deskg-read
 ```
-- 사용자 전역: `~/.claude/skills/deskg/`, `~/.claude/skills/deskg-force/`
+- 사용자 전역: `~/.claude/skills/deskg/`, `~/.claude/skills/deskg-force/`, `~/.claude/skills/deskg-read/`
 - 또는 프로젝트: `<repo>/.claude/skills/…`
 
 - **`deskg`** 는 deskG 작업 맥락에서 자동으로도 쓰이고 `/deskg` 로도 호출한다(안전 기본값).
 - **`deskg-force`** 는 **사용자가 확인 생략을 명시적으로 지시**했거나 `/deskg-force` 로 직접
   호출할 때만 쓴다 — 애매하면 `deskg`. (제3자 알림이 확인 없이 나가므로 자동 선택하지 않는다.)
+- **`deskg-read`** 는 조회·요약만 필요할 때. `/deskg-read`, 또는 태스크 링크를 주며 "읽어줘/요약해줘" 할 때.
 
-`deskg-force` 만 쓰더라도 `deskg` 는 헬퍼·레퍼런스 때문에 반드시 함께 설치돼 있어야 한다.
+변형만 쓰더라도 `deskg` 는 헬퍼·레퍼런스 때문에 반드시 함께 설치돼 있어야 한다.
 
 ## 설정 (사용자마다)
 `~/.deskg/config.json` 을 만든다(자세한 건 [deskg/references/setup.md](deskg/references/setup.md)):
