@@ -39,16 +39,22 @@ python "<deskg>/scripts/deskg.py" comments 72        # 코멘트(스레드)
 python "<deskg>/scripts/deskg.py" progresses 72      # 진행(버전) 목록
 python "<deskg>/scripts/deskg.py" folders            # folderId ↔ 폴더 경로 표
 python "<deskg>/scripts/deskg.py" notifications      # 내 알림(코멘트/멘션)
+python "<deskg>/scripts/deskg.py" photos 72          # 태스크에 있는 사진/영상 목록
+python "<deskg>/scripts/deskg.py" photos 72 --out-dir ./shots   # 사진 내려받기(로컬 저장만)
+python "<deskg>/scripts/deskg.py" photo-download 8f1c….png      # 한 장 내려받기
 ```
 
-**`new` / `comment` / `progress` / `patch` 는 이 스킬에서 절대 쓰지 않는다.**
+**`new` / `comment` / `progress` / `patch` / `photo-upload` 는 이 스킬에서 절대 쓰지 않는다.**
 사용자가 이 스킬 안에서 게시를 요청하면, 그건 `deskg` 스킬의 일이라고 알리고 그쪽으로 전환한다.
+(`photos`·`photo-download` 는 서버를 바꾸지 않고 로컬에만 저장하므로 조회에 해당한다.)
 
 ## 링크가 주어졌을 때
 
 - **deskG 링크** (`https://deskg.kr/72`, `deskg.kr/72`, `/72`, 또는 그냥 숫자 `72`):
   숫자 ID를 뽑아 `task {id}` 로 본문을 읽는다. 스레드·이력까지 원하면 `comments {id}`,
-  `progresses {id}` 도 함께 읽는다. 본문 안에 다른 deskG 링크가 있으면 **관련 태스크로 보고만** 하고,
+  `progresses {id}` 도 함께 읽는다. 본문에 `<img>` 가 있고 **그 내용이 답에 필요하면**
+  `photos {id} --out-dir <스크래치>` 로 받아 **Read 도구로 열어** 확인한다(`https://deskg.kr/uploads/…`
+  를 WebFetch로 직접 열면 로그인 페이지로 튕긴다). 필요 없으면 "이미지 N장 있음"으로만 적는다. 본문 안에 다른 deskG 링크가 있으면 **관련 태스크로 보고만** 하고,
   사용자가 원하면 이어서 읽는다(무한 추적 금지 — 기본 1단계).
 - **그 외 웹 링크**: WebFetch 로 읽어 요약한다. 로그인·비공개라 못 읽으면 그 사실을 알린다.
 - 링크가 여러 개면 각각 읽고 **링크별로 나눠** 정리한다.

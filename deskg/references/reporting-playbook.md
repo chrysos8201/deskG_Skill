@@ -117,9 +117,27 @@ python "<스킬>/scripts/deskg.py" comment 72 --body-file note.txt
 • <요약> — https://deskg.kr/72   (커밋 첫 줄에 태스크 링크)
 ```
 
-- API로는 상태(시작전/진행 중/검수중/완료)·완료 체크를 바꿀 수 없다. 완료를 **본문에
+- 상태(시작전/진행 중/검수중/완료)·완료 체크는 `patch` 로 바꾼다:
+  `patch 72 --status 완료 --done true`. 구버전 서버라 `patch` 가 404면 완료를 **본문에
   분명히** 적고, 상태 전환은 사람이 UI에서 한다.
 - 필요하면 사용자에게 "제가 완료 코멘트까지 올릴까요?"처럼 **쓰기 전에 확인**한다.
+
+### 스크린샷·화면 캡처를 함께 올릴 때
+
+증거가 되는 화면(스크린샷·그래프·before/after)은 말로 설명하는 것보다 이미지가 낫다.
+`photo-upload` 로 올린 뒤 반환된 `url`을 본문 HTML에 넣는다(코멘트는 평문이라 이미지 불가):
+
+```bash
+python "<스킬>/scripts/deskg.py" photo-upload after.png     # → <img src="/uploads/…"> 안내 출력
+```
+```html
+<h3>결과</h3>
+<p>목록 초기 렌더가 1.8s → 0.4s.</p>
+<img src="/uploads/8f1c….png" alt="개선 후 로딩 타임라인">
+```
+이 HTML을 `--html-file` 로 `progress`(새 버전) 또는 `new`(계획)에 넘긴다.
+이미지 여러 장이면 `<img>` 사이에 무슨 화면인지 한 줄씩 설명을 넣는다 — 나중에 읽는 사람이
+캡션 없는 이미지 나열을 해석하지 못한다.
 
 ---
 

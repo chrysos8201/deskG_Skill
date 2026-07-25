@@ -5,7 +5,8 @@ deskg.py — deskG(/api/v1) CLI helper for the deskG Claude skill.
 Uses ONLY the Python 3 standard library (no pip install needed).
 Talks to the per-account API-key REST API of deskG (https://deskg.kr).
 
-Config resolution (first hit wins), so every user brings their own key:
+Config sources are MERGED (env wins, lower sources fill the gaps), so every
+user brings their own key. Precedence, high -> low:
   1. Environment:  DESKG_API_KEY, DESKG_BASE_URL, DESKG_FOLDER_ID
   2. $DESKG_CONFIG          (path to a JSON file)
   3. ~/.deskg/config.json
@@ -18,17 +19,24 @@ Subcommands:
   me                       Verify the key, print the owning account.
   tasks [--q T] [--folder ID]     List / search tasks (summary).
   task ID                  Show one task (detail, incl. body).
-  folders                  Derive folderId<->folder map from existing tasks
-                           (the API has no folder-list endpoint).
+  comments ID / progresses ID     Read a task's comment thread / versions.
+  folders                  Derive folderId<->folder map from existing tasks.
+  notifications            My notifications (comments / @mentions).
   new  --title T (--html-file F | --body-file F | --body T)
        [--folder ID] [--parent ID] [--dry-run]     Create a task (the "plan").
   comment ID (--body-file F | --body T) [--dry-run] Add a comment / progress note.
+  progress ID (--html-file F | --body-file F)      Add a progress version.
+  patch ID [--status S] [--done true|false] …      Update a task.
+  photo-upload FILE [FILE …] [--base64] [--dry-run]  Upload photos/videos.
+  photo-download REF [--out F]      Download one photo by fileName / URL.
+  photos ID [--out-dir D]           List (and optionally fetch) a task's photos.
 
 Bodies are read from files by default to avoid shell-quoting problems with
 Korean text / HTML on Windows PowerShell. Always writes/reads UTF-8.
 """
 import argparse
 import json
+import mimetypes
 import os
 import sys
 import urllib.request
@@ -101,30 +109,30 @@ def die(msg, code=1):
     sys.exit(code)
 
 
-def request(method, path, base, key, payload=None, soft=False):
-    """Do one API call. Returns (status, parsed_json_or_None).
+def send(method, path, base, key, data=None, content_type=None,
+         accept="application/json", timeout=30, soft=False, soft_codes=None):
+    """Do one API call and return (status, raw_bytes). Binary-safe.
 
     On failure it prints a clean error and exits — unless soft=True, in which
     case it returns (status_or_None, None) so callers (e.g. `folders`) can keep
     going after a single failed request instead of aborting the whole command.
+    soft_codes=(404,) swallows only those status codes, so the server's own
+    error text still surfaces for everything else (e.g. a 400 "too large").
     """
     url = base + path
-    data = None
     headers = {
         "X-Api-Key": key,
-        "Accept": "application/json",
+        "Accept": accept,
         "User-Agent": "deskg-skill/1.0",
     }
-    if payload is not None:
-        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        headers["Content-Type"] = "application/json"
+    if content_type:
+        headers["Content-Type"] = content_type
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            status = resp.status
-            raw = resp.read().decode("utf-8", "replace")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, resp.read()
     except urllib.error.HTTPError as e:
-        if soft:
+        if soft or (soft_codes and e.code in soft_codes):
             return e.code, None
         raw = e.read().decode("utf-8", "replace")
         try:
@@ -139,14 +147,25 @@ def request(method, path, base, key, payload=None, soft=False):
         reason = getattr(e, "reason", None) or e
         die(f"network error reaching {url}: {reason}", code=3)
 
-    if not raw.strip():
+
+def request(method, path, base, key, payload=None, soft=False, soft_codes=None):
+    """JSON call. Returns (status, parsed_json_or_None). See send() for errors."""
+    data = ctype = None
+    if payload is not None:
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        ctype = "application/json"
+    status, raw = send(method, path, base, key, data, ctype, soft=soft, soft_codes=soft_codes)
+    if raw is None:
+        return status, None
+    text = raw.decode("utf-8", "replace")
+    if not text.strip():
         return status, None
     try:
-        return status, json.loads(raw)
+        return status, json.loads(text)
     except json.JSONDecodeError:
         if soft:
             return status, None
-        die(f"non-JSON response (HTTP {status}) from {method} {path}: {raw[:300]}", code=2)
+        die(f"non-JSON response (HTTP {status}) from {method} {path}: {text[:300]}", code=2)
 
 
 def read_text_arg(inline, file_path, what):
@@ -377,6 +396,137 @@ def cmd_comment(args, base, key, folder):
     print(f"url: {base}/{args.id}")
 
 
+# ── photos ───────────────────────────────────────────────────────────────
+
+# 서버가 받아주는 확장자(MediaService 와 동일). 서버가 최종 판정하지만,
+# 올리기 전에 걸러주면 왕복 한 번을 아낀다.
+PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg",
+              ".mp4", ".webm", ".mov", ".m4v", ".ogg"}
+
+
+def ascii_filename(path):
+    """멀티파트 헤더에 넣을 안전한 파일명. 서버는 GUID 로 다시 저장하므로 확장자만 중요."""
+    name = os.path.basename(path)
+    try:
+        name.encode("ascii")
+    except UnicodeEncodeError:
+        name = "upload" + os.path.splitext(name)[1].lower()
+    return name.replace('"', "").replace("\r", "").replace("\n", "")
+
+
+def build_multipart(path):
+    """(body_bytes, content_type) — file 파트 하나짜리 multipart/form-data."""
+    with open(path, "rb") as f:
+        blob = f.read()
+    name = ascii_filename(path)
+    ctype = mimetypes.guess_type(name)[0] or "application/octet-stream"
+    boundary = "----deskg" + os.urandom(12).hex()
+    head = (f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{name}"\r\n'
+            f"Content-Type: {ctype}\r\n\r\n").encode("utf-8")
+    tail = f"\r\n--{boundary}--\r\n".encode("utf-8")
+    return head + blob + tail, "multipart/form-data; boundary=" + boundary
+
+
+def photo_ref_to_name(ref):
+    """fileName / /uploads/x.png / /api/v1/photos/x.png / https://deskg.kr/uploads/x.png → 파일명."""
+    ref = ref.strip()
+    if "://" in ref:
+        ref = urllib.parse.urlparse(ref).path
+    ref = ref.split("?")[0].split("#")[0]
+    name = ref.rsplit("/", 1)[-1]
+    if not name:
+        die(f"사진 파일명을 알 수 없습니다: {ref}")
+    return name
+
+
+def cmd_photo_upload(args, base, key, folder):
+    import base64 as _b64
+    out = []
+    for path in args.files:
+        if not os.path.isfile(path):
+            die(f"파일을 찾을 수 없습니다: {path}")
+        ext = os.path.splitext(path)[1].lower()
+        if ext not in PHOTO_EXTS:
+            die(f"허용되지 않는 형식입니다: {ext or '(확장자 없음)'} — 허용: {' '.join(sorted(PHOTO_EXTS))}")
+        size = os.path.getsize(path)
+        if args.dry_run:
+            print(f"[dry-run] POST /api/v1/photos  ← {path} ({size:,} bytes)")
+            continue
+
+        if args.base64:
+            # 멀티파트를 못 쓰는 환경용 폴백(전송량 +33%).
+            with open(path, "rb") as f:
+                payload = {"fileName": ascii_filename(path),
+                           "contentType": mimetypes.guess_type(path)[0],
+                           "contentBase64": _b64.b64encode(f.read()).decode("ascii")}
+            _, res = request("POST", "/api/v1/photos", base, key, payload, soft_codes=(404,))
+        else:
+            body, ctype = build_multipart(path)
+            _, raw = send("POST", "/api/v1/photos", base, key, body, ctype,
+                          timeout=300, soft_codes=(404,))
+            res = json.loads(raw.decode("utf-8", "replace")) if raw else None
+        if res is None:
+            die("업로드 실패(404). 서버에 사진 API(POST /api/v1/photos)가 배포됐는지 확인하세요.")
+        out.append(res)
+        print(f"업로드됨: {os.path.basename(path)} → {res['fileName']}  ({res['size']:,} bytes, {res['kind']})")
+        print(f"  본문에 넣을 태그: <img src=\"{res['url']}\">" if res["kind"] == "image"
+              else f"  본문에 넣을 태그: <video src=\"{res['url']}\" controls></video>")
+        print(f"  다시 받기: photo-download {res['fileName']}")
+    if args.json and out:
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+
+
+def cmd_photo_download(args, base, key, folder):
+    name = photo_ref_to_name(args.ref)
+    dest = args.out or name
+    status, raw = send("GET", "/api/v1/photos/" + urllib.parse.quote(name), base, key,
+                       accept="*/*", timeout=300, soft_codes=(404,))
+    if raw is None:
+        die(f"내려받기 실패(HTTP {status}). 파일명이 맞는지, 서버에 사진 API 가 배포됐는지 확인하세요.")
+    d = os.path.dirname(os.path.abspath(dest))
+    if d:
+        os.makedirs(d, exist_ok=True)
+    with open(dest, "wb") as f:
+        f.write(raw)
+    print(f"저장됨: {dest}  ({len(raw):,} bytes)")
+
+
+def cmd_photos(args, base, key, folder):
+    _, rows = request("GET", f"/api/v1/tasks/{args.id}/photos", base, key, soft_codes=(404,))
+    if rows is None:
+        die(f"사진 목록 조회 실패(404). 태스크 #{args.id} 가 없거나, 서버에"
+            " GET /tasks/{id}/photos 가 아직 배포되지 않았습니다.")
+    if args.json:
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        return
+    if not rows:
+        print("(no photos — 본문·진행에 이미지/영상이 없음)")
+        return
+    for r in rows:
+        where = "본문" if r["source"] == "content" else f"진행 {r.get('progressNumber')}"
+        print(f"— [{r['kind']}] {r['url']}   ({where})")
+    if not args.out_dir:
+        return
+    os.makedirs(args.out_dir, exist_ok=True)
+    got = 0
+    for r in rows:
+        if not r.get("fileName"):
+            print(f"  건너뜀(외부 URL): {r['url']}")   # deskG 업로드가 아닌 이미지
+            continue
+        status, raw = send("GET", "/api/v1/photos/" + urllib.parse.quote(r["fileName"]),
+                           base, key, accept="*/*", timeout=300, soft=True)
+        if raw is None:
+            print(f"  실패(HTTP {status}): {r['fileName']}")
+            continue
+        dest = os.path.join(args.out_dir, r["fileName"])
+        with open(dest, "wb") as f:
+            f.write(raw)
+        got += 1
+        print(f"  저장됨: {dest}  ({len(raw):,} bytes)")
+    print(f"{got}개 내려받음 → {args.out_dir}")
+
+
 def build_parser():
     p = argparse.ArgumentParser(prog="deskg", description="deskG /api/v1 CLI helper")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -444,6 +594,22 @@ def build_parser():
     sp.add_argument("--body-file", dest="body_file", help="file with comment text")
     sp.add_argument("--body", help="inline comment text")
     sp.add_argument("--dry-run", action="store_true")
+
+    sp = sub.add_parser("photo-upload", help="upload photo(s)/video(s), print the URL to embed")
+    sp.add_argument("files", nargs="+", help="local image/video file(s)")
+    sp.add_argument("--base64", action="store_true",
+                    help="send as JSON base64 instead of multipart (fallback, +33%% traffic)")
+    sp.add_argument("--json", action="store_true")
+    sp.add_argument("--dry-run", action="store_true")
+
+    sp = sub.add_parser("photo-download", help="download one photo by fileName or URL")
+    sp.add_argument("ref", help="fileName, /uploads/x.png, /api/v1/photos/x.png or a full URL")
+    sp.add_argument("--out", help="output path (default: the file name)")
+
+    sp = sub.add_parser("photos", help="list a task's photos/videos (body + progress versions)")
+    sp.add_argument("id", type=int)
+    sp.add_argument("--out-dir", dest="out_dir", help="also download them into this directory")
+    sp.add_argument("--json", action="store_true")
     return p
 
 
@@ -462,6 +628,9 @@ def main():
         "folders": cmd_folders,
         "new": cmd_new,
         "comment": cmd_comment,
+        "photo-upload": cmd_photo_upload,
+        "photo-download": cmd_photo_download,
+        "photos": cmd_photos,
     }[args.cmd](args, base, key, folder)
 
 

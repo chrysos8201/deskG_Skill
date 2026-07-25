@@ -55,9 +55,13 @@ python "<스킬>/scripts/deskg.py" progress 72 --html-file prog.html   # 진행 
 python "<스킬>/scripts/deskg.py" comment 72 --body-file note.txt     # 코멘트/메모
 python "<스킬>/scripts/deskg.py" patch 72 --status 완료 --done true  # 상태/완료/본문 수정
 python "<스킬>/scripts/deskg.py" notifications                       # 내 알림(코멘트/멘션)
+python "<스킬>/scripts/deskg.py" photo-upload shot.png               # 사진/영상 올리기 → 넣을 태그 출력
+python "<스킬>/scripts/deskg.py" photos 72                           # 태스크의 사진 목록
+python "<스킬>/scripts/deskg.py" photos 72 --out-dir ./shots         # 목록 + 전부 내려받기
+python "<스킬>/scripts/deskg.py" photo-download 8f1c….png --out a.png # 한 장 내려받기
 ```
-> `patch`·`notifications`·`progress` 는 **최신 배포 서버**에서만 동작한다(구버전이면 404 →
-> 헬퍼가 안내). 조회(me/tasks/task/comments/folders)와 new/comment 는 어디서나 동작.
+> `patch`·`notifications`·`progress`·`photo-*`·`photos` 는 **최신 배포 서버**에서만 동작한다
+> (구버전이면 404 → 헬퍼가 안내). 조회(me/tasks/task/comments/folders)와 new/comment 는 어디서나 동작.
 
 - **본문은 항상 파일로 넘긴다**(`--html-file` / `--body-file`). 한글·HTML을 CLI 인자로
   직접 넘기면 Windows PowerShell에서 따옴표/인코딩이 깨진다. 임시 파일은 스크래치
@@ -69,7 +73,34 @@ python "<스킬>/scripts/deskg.py" notifications                       # 내 알
 `@멘션` 대상에게 **알림·웹푸시를 보낸다** — 즉 남을 향한 발행이다. 그래서:
 - **첫 태스크 생성 전, 그리고 모든 코멘트 게시 전에 사용자에게 확인을 받는다.**
 - 확인용으로 **`--dry-run`을 먼저 실행해 보낼 내용을 보여준 뒤** 동의를 받고 실제로 올린다.
-- 조회(`me`/`tasks`/`task`/`folders`)는 확인 없이 자유롭게 해도 된다.
+- 조회(`me`/`tasks`/`task`/`folders`/`photos`/`photo-download`)는 확인 없이 자유롭게 해도 된다.
+- `photo-upload` 는 서버에 파일만 올릴 뿐 **아무 태스크에도 붙지 않고 알림도 없다** →
+  준비 단계로 확인 없이 해도 된다. 다만 **삭제 API가 없어 올린 파일은 사람이 지울 수도 없다**.
+  그러니 **사용자가 준 파일 / 내가 만든 산출물만** 올리고, 관계없는 로컬 파일은 올리지 않는다.
+  실제 게시는 그 URL을 본문에 넣어 `new`/`progress`/`patch` 할 때 일어나므로, **그 시점의
+  확인 규칙을 그대로 따른다**.
+
+## 사진 올리기 / 받기
+
+**올리기** — 3단계다. `photo-upload` 로 올리고 → 출력된 `/uploads/…` URL을 본문 HTML에
+`<img>` 로 넣고 → 그 HTML을 `new`/`progress`/`patch` 에 `--html-file` 로 넘긴다.
+```bash
+python "<스킬>/scripts/deskg.py" photo-upload before.png after.png   # 여러 장 한 번에
+```
+- ⚠️ **코멘트에는 이미지를 못 넣는다**(코멘트는 평문 — `<img>` 가 글자로 보인다).
+  사진이 있는 보고는 `progress`(새 버전)나 `patch --html-file`(본문 수정)로 한다.
+- 이미지엔 `alt`(무슨 화면인지)를 붙이고, 여러 장이면 사이에 한 줄 설명을 넣는다.
+- 허용: `jpg jpeg png gif webp svg mp4 webm mov m4v ogg`, 최대 300MB. 서버가 파일명을
+  GUID로 바꿔 저장한다. 멀티파트가 막힌 환경이면 `--base64`(전송량 +33%).
+
+**받기** — 태스크에 있는 사진을 로컬로 가져온다.
+```bash
+python "<스킬>/scripts/deskg.py" photos 72                    # 어떤 사진이 어디(본문/진행 N)에 있는지
+python "<스킬>/scripts/deskg.py" photos 72 --out-dir ./shots  # 전부 내려받기
+python "<스킬>/scripts/deskg.py" photo-download 8f1c….png     # 한 장만 (파일명·URL 아무거나)
+```
+받은 이미지를 실제로 **보려면 Read 도구로 열어야 한다**(파일만 받아서는 내용을 모른다).
+`https://deskg.kr/uploads/…` 를 WebFetch로 직접 열면 로그인 페이지로 튕긴다 — 반드시 헬퍼로 받는다.
 
 ## 작업 리포팅 흐름
 
@@ -138,6 +169,9 @@ python "<스킬>/scripts/deskg.py" tasks --q "핵심키워드"
 - **키 보안**: 저장소/커밋/메모리에 키를 남기지 않는다. 설정 경로에만.
 - **폴더 규칙**: leaf 폴더에만 생성(위반 시 400 + 이유). 최상위·하위폴더 보유 폴더 금지.
 - **삭제 없음**: API는 삭제를 제공하지 않는다. 잘못 올렸으면 사용자에게 UI 삭제를 요청.
+  **업로드한 사진은 UI로도 못 지운다**(파일 정리 기능 없음) — 올리기 전에 한 번 더 생각할 것.
+- **사진 열람 범위**: 파일명이 GUID라 추측은 못 하지만, 파일명을 아는 유효 키/로그인 사용자면
+  누구나 볼 수 있다. 민감한 캡처(자격증명·개인정보가 찍힌 화면)는 올리지 않는다.
 - **부작용 확인(필수)**: 태스크/코멘트 생성은 실제 게시이며 알림·푸시를 유발한다. 위 **"쓰기 전 확인(필수)"** 규칙을 따른다 — 첫 태스크 생성·모든 코멘트 게시 전 사용자 동의, `--dry-run` 먼저.
 - **알림 자동 발생**: 코멘트를 달면 태스크 작성자·`@멘션` 대상에게 알림/푸시가 간다. 불필요한 멘션 주의.
 
