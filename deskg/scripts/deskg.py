@@ -111,13 +111,17 @@ def die(msg, code=1):
 
 def send(method, path, base, key, data=None, content_type=None,
          accept="application/json", timeout=30, soft=False, soft_codes=None):
-    """Do one API call and return (status, raw_bytes). Binary-safe.
+    """Do one API call and return (status, raw_bytes, content_type). Binary-safe.
 
     On failure it prints a clean error and exits — unless soft=True, in which
-    case it returns (status_or_None, None) so callers (e.g. `folders`) can keep
-    going after a single failed request instead of aborting the whole command.
-    soft_codes=(404,) swallows only those status codes, so the server's own
-    error text still surfaces for everything else (e.g. a 400 "too large").
+    case it returns (status_or_None, None, None) so callers (e.g. `folders`) can
+    keep going after a single failed request instead of aborting the whole
+    command. soft_codes=(404,) swallows only those status codes, so the server's
+    own error text still surfaces for everything else (e.g. a 400 "too large").
+
+    Note the content_type: a server without the endpoint deployed answers the
+    Blazor fallback route and *redirects to the login page* — HTTP 200 with
+    HTML. Callers must check the type, or they'd save a login page as a .png.
     """
     url = base + path
     headers = {
@@ -130,10 +134,10 @@ def send(method, path, base, key, data=None, content_type=None,
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.status, resp.read()
+            return resp.status, resp.read(), (resp.headers.get_content_type() or "")
     except urllib.error.HTTPError as e:
         if soft or (soft_codes and e.code in soft_codes):
-            return e.code, None
+            return e.code, None, None
         raw = e.read().decode("utf-8", "replace")
         try:
             detail = json.loads(raw).get("error", raw)
@@ -143,7 +147,7 @@ def send(method, path, base, key, data=None, content_type=None,
     except OSError as e:
         # URLError, socket/read timeout (TimeoutError), connection reset — all OSError.
         if soft:
-            return None, None
+            return None, None, None
         reason = getattr(e, "reason", None) or e
         die(f"network error reaching {url}: {reason}", code=3)
 
@@ -154,7 +158,7 @@ def request(method, path, base, key, payload=None, soft=False, soft_codes=None):
     if payload is not None:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         ctype = "application/json"
-    status, raw = send(method, path, base, key, data, ctype, soft=soft, soft_codes=soft_codes)
+    status, raw, got = send(method, path, base, key, data, ctype, soft=soft, soft_codes=soft_codes)
     if raw is None:
         return status, None
     text = raw.decode("utf-8", "replace")
@@ -163,7 +167,8 @@ def request(method, path, base, key, payload=None, soft=False, soft_codes=None):
     try:
         return status, json.loads(text)
     except json.JSONDecodeError:
-        if soft:
+        if soft or (soft_codes and got == "text/html"):
+            # 엔드포인트 미배포 → Blazor 폴백이 로그인 페이지(HTML 200)를 준다.
             return status, None
         die(f"non-JSON response (HTTP {status}) from {method} {path}: {text[:300]}", code=2)
 
@@ -463,11 +468,15 @@ def cmd_photo_upload(args, base, key, folder):
             _, res = request("POST", "/api/v1/photos", base, key, payload, soft_codes=(404,))
         else:
             body, ctype = build_multipart(path)
-            _, raw = send("POST", "/api/v1/photos", base, key, body, ctype,
-                          timeout=300, soft_codes=(404,))
-            res = json.loads(raw.decode("utf-8", "replace")) if raw else None
+            _, raw, got = send("POST", "/api/v1/photos", base, key, body, ctype,
+                               timeout=300, soft_codes=(404,))
+            try:
+                res = json.loads(raw.decode("utf-8", "replace")) if raw else None
+            except json.JSONDecodeError:
+                res = None      # 미배포 서버가 로그인 HTML 을 200 으로 돌려준 경우
         if res is None:
-            die("업로드 실패(404). 서버에 사진 API(POST /api/v1/photos)가 배포됐는지 확인하세요.")
+            die("업로드 실패. 서버에 사진 API(POST /api/v1/photos)가 배포됐는지 확인하세요"
+                " — 미배포면 404 이거나 로그인 페이지(HTML)가 돌아옵니다.")
         out.append(res)
         print(f"업로드됨: {os.path.basename(path)} → {res['fileName']}  ({res['size']:,} bytes, {res['kind']})")
         print(f"  본문에 넣을 태그: <img src=\"{res['url']}\">" if res["kind"] == "image"
@@ -480,9 +489,10 @@ def cmd_photo_upload(args, base, key, folder):
 def cmd_photo_download(args, base, key, folder):
     name = photo_ref_to_name(args.ref)
     dest = args.out or name
-    status, raw = send("GET", "/api/v1/photos/" + urllib.parse.quote(name), base, key,
-                       accept="*/*", timeout=300, soft_codes=(404,))
-    if raw is None:
+    status, raw, got = send("GET", "/api/v1/photos/" + urllib.parse.quote(name), base, key,
+                            accept="*/*", timeout=300, soft_codes=(404,))
+    if raw is None or got == "text/html":
+        # HTML 이면 미배포 서버의 로그인 페이지 — 그걸 .png 로 저장해선 안 된다.
         die(f"내려받기 실패(HTTP {status}). 파일명이 맞는지, 서버에 사진 API 가 배포됐는지 확인하세요.")
     d = os.path.dirname(os.path.abspath(dest))
     if d:
@@ -514,9 +524,9 @@ def cmd_photos(args, base, key, folder):
         if not r.get("fileName"):
             print(f"  건너뜀(외부 URL): {r['url']}")   # deskG 업로드가 아닌 이미지
             continue
-        status, raw = send("GET", "/api/v1/photos/" + urllib.parse.quote(r["fileName"]),
-                           base, key, accept="*/*", timeout=300, soft=True)
-        if raw is None:
+        status, raw, ctype = send("GET", "/api/v1/photos/" + urllib.parse.quote(r["fileName"]),
+                                  base, key, accept="*/*", timeout=300, soft=True)
+        if raw is None or ctype == "text/html":
             print(f"  실패(HTTP {status}): {r['fileName']}")
             continue
         dest = os.path.join(args.out_dir, r["fileName"])
