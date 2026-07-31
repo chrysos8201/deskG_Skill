@@ -93,13 +93,30 @@ Authorization: Bearer dgk_xxxxxxxx...
 - `html`은 서버에서 **정화(Sanitize)** 된다: 허용 태그만 남고 `script/style/on*/class`
   제거, 링크는 `http/https`만. **허용 태그(ContentSanitizer 기준 — 단일 출처):**
   `p, br, hr, h1~h6, strong, b, em, i, u, s, strike, del, ul, ol, li, blockquote,
-  pre, code, span, a, img, video`. **허용 속성:** `src, width, height, alt, controls,
-  preload, poster, href, rel`. → 사진은 `<img src="/uploads/…" alt="설명" width="600">`,
+  pre, code, span, a, img, video, table, thead, tbody, tfoot, tr, th, td,
+  details, summary`. **허용 속성:** `src, width, height, alt, controls,
+  preload, poster, href, rel, colspan, rowspan, span, open, data-diagram`.
+  ⚠️ `caption`·`colgroup`·`col` 은 **허용되지 않는다** — 리치 에디터가 표현하지 못해
+  사람이 수정 창을 열면 사라지므로 일부러 뺐다. 표는 `thead/tbody/tr/th/td` 로만 쓴다.
+  표·접기·다이어그램은 **2026-07-31 배포 이후** 서버에서만 남는다(그 전이면 조용히 제거).
+  → 사진은 `<img src="/uploads/…" alt="설명" width="600">`,
   영상은 `<video src="/uploads/….mp4" controls poster="/uploads/….png"></video>` 형태로 쓴다.
   `<source>` 태그는 허용 목록에 없어 제거되므로 `<video src=…>` 를 직접 쓸 것.
   `data:` URL 은 스킴 검사에서 잘리므로 이미지는 **반드시 업로드해서 `/uploads/…` 경로로** 넣는다.
-- **코멘트에는 이미지를 넣을 수 없다** — 코멘트는 평문이라 `<img>` 가 그대로 글자로 보인다.
-  사진을 곁들인 보고는 **진행 추가(`progress`)** 나 **본문 수정(`patch --html-file`)** 으로 한다.
+- **다이어그램**은 `<pre data-diagram="mermaid">정의</pre>` 한 덩어리로 넣는다 —
+  저장되는 건 **텍스트 정의**이고 화면에서 SVG 로 그려진다(진행 비교·검색·수정이 그대로 된다).
+  `<` `>` `&` 는 HTML 이므로 `&lt;` `&gt;` `&amp;` 로 이스케이프할 것(`--&gt;` 가 화살표).
+  문법이 틀리면 그림 대신 정의와 오류 이유가 보인다 — 내용이 사라지지는 않는다.
+  ```html
+  <pre data-diagram="mermaid">graph TD
+    A[태스크 생성] --&gt; B{리뷰 필요?}
+    B -- 예 --&gt; C[검수중]
+    B -- 아니오 --&gt; D[완료]</pre>
+  ```
+  쓸 수 있는 종류(mermaid): `graph`/`flowchart`, `stateDiagram-v2`, `sequenceDiagram`,
+  `gantt`, `pie`, `erDiagram` 등. 예시 모음은 <https://deskg.kr/313>.
+- **코멘트에는 이미지·표·다이어그램을 넣을 수 없다** — 코멘트는 평문이라 태그가 그대로 글자로 보인다.
+  사진·표·다이어그램을 곁들인 보고는 **진행 추가(`progress`)** 나 **본문 수정(`patch --html-file`)** 으로 한다.
 - **코멘트는 평문**으로 저장/표시(HTML escape, 줄바꿈 유지). 코멘트 작성 시
   본문의 `@표시이름` 멘션과 태스크 작성자에게 **알림·웹푸시가 자동 발생**.
 - POST에는 계정 단위 레이트리밋이 적용될 수 있다(과도한 연속 생성 주의).
