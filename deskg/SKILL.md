@@ -80,6 +80,30 @@ python "<스킬>/scripts/deskg.py" photo-download 8f1c….png --out a.png # 한 
   실제 게시는 그 URL을 본문에 넣어 `new`/`progress`/`patch` 할 때 일어나므로, **그 시점의
   확인 규칙을 그대로 따른다**.
 
+## 다이어그램 · 표로 설명하기
+
+말로 길게 풀어 쓰는 대신 **그림·표**를 쓰면 훨씬 빨리 읽힌다. 새 API가 필요 없다 —
+본문 HTML에 아래를 넣으면 화면에서 그려진다(UI와 API가 같은 정화기를 쓴다).
+
+```html
+<pre data-diagram="mermaid">graph TD
+  A[태스크 생성] --&gt; B{리뷰 필요?}
+  B -- 예 --&gt; C[검수중]
+  B -- 아니오 --&gt; D[완료]</pre>
+```
+
+- **저장되는 건 텍스트 정의**다 → 진행(버전) 비교에 그대로 보이고 검색·수정도 된다.
+  문법이 틀리면 그림 대신 정의와 오류 이유가 보인다(내용이 사라지지 않는다).
+- `<` `>` `&` 는 HTML 이므로 `&lt;` `&gt;` `&amp;` 로 이스케이프한다(`--&gt;` 가 화살표).
+- 종류: `graph`/`flowchart`(흐름) · `stateDiagram-v2`(상태 전이) · `sequenceDiagram`(호출 순서)
+  · `gantt`(일정) · `pie`(비율) · `erDiagram`(데이터 구조). **예시 모음: <https://deskg.kr/313>**
+- 표는 `<table><tbody><tr><th>…</th></tr>…</tbody></table>` (`colspan`/`rowspan` 가능),
+  긴 부록은 `<details><summary>제목</summary>…</details>`.
+  ⚠️ `caption`·`colgroup`·`col` 은 허용되지 않는다(정화기가 제거).
+- ⚠️ **코멘트에는 못 넣는다** — 코멘트는 평문이라 태그가 글자로 보인다.
+  그림·표가 있는 보고는 `progress`(새 버전)나 `patch --html-file`(본문 수정)로.
+- 표·접기·다이어그램은 **2026-07-31 배포 이후** 서버에서만 남는다(그 전이면 조용히 제거).
+
 ## 사진 올리기 / 받기
 
 **올리기** — 3단계다. `photo-upload` 로 올리고 → 출력된 `/uploads/…` URL을 본문 HTML에
